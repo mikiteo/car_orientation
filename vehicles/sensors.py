@@ -128,41 +128,78 @@ class SensorSystem:
                         rect["left"], rect["top"],
                         rect["right"], rect["bottom"])
 
-
-
-    def analyze_and_plot(self, sensor_arrays: Dict[str, List[Tuple[int, str, Tuple[int, int]]]], polar_radius: int, plot_center: Tuple[int, int]):
+    def analyze_and_plot(self, sensor_arrays: Dict[str, List[Tuple[int, str, Tuple[int, int]]]], polar_radius: int, plot_center: Tuple[int, int], overlay_data: Dict[int, Dict[str, float]]):
         cx, cy = plot_center
         points = []
 
-        for data in sensor_arrays.values():
-            for _, _, (x, y) in data:
+        for direction, data in sensor_arrays.items():
+            for car_id, side, (x, y) in data:
                 dx, dy = x - cx, y - cy
                 dist = np.hypot(dx, dy)
                 angle = (np.arctan2(dy, dx) + 2 * np.pi) % (2 * np.pi)
-                points.append((dist, angle, x, y))
-
-        closest = [None] * 360
-        for dist, angle, x, y in points:
-            deg = int(np.degrees(angle))
-            if closest[deg] is None or dist < closest[deg][0]:
-                closest[deg] = (dist, angle, x, y)
-
-        filtered = [p for p in closest if p is not None]
+                points.append((dist, angle, car_id))
 
         fig, ax = plt.subplots(subplot_kw={'projection': 'polar'}, figsize=(6, 6))
-        if filtered:
-            distances, angles = zip(*[(p[0], p[1]) for p in filtered])
-            ax.scatter(angles, distances, c='r', s=10, label="Closest Points")
+
+        if points:
+            ax.scatter([p[1] for p in points], [p[0] for p in points], c='r', s=10, label='Closest Points')
+
+        cars: Dict[int, List[Tuple[float, float]]] = {}
+        for r, th, cid in points:
+            cars.setdefault(cid, []).append((r, th))
+
+        NEAR_DISTANCE_THRESHOLD = polar_radius * 0.43
+
+        for car_id, vals in cars.items():
+            if car_id not in overlay_data:
+                continue
+
+            d = overlay_data[car_id]['d']
+            v_val = overlay_data[car_id]['prev_v']
+            a = overlay_data[car_id]['a']
+
+            x_list = [r * np.cos(th) for r, th in vals]
+            y_list = [r * np.sin(th) for r, th in vals]
+            x_avg = np.mean(x_list)
+            y_avg = np.mean(y_list)
+            th_center = (np.arctan2(y_avg, x_avg) + 2 * np.pi) % (2 * np.pi)
+            r_center = np.mean([r for r, _ in vals])
+
+            if r_center < NEAR_DISTANCE_THRESHOLD:
+                r_shifted = r_center + 65
+                th_shifted = th_center
+            else:
+                norm = r_center
+                dx = x_avg / norm * 10 if norm != 0 else 0
+                dy = y_avg / norm * 10 if norm != 0 else 0
+                x_shifted = x_avg + dx
+                y_shifted = y_avg + dy
+                r_shifted = np.hypot(x_shifted, y_shifted)
+                th_shifted = (np.arctan2(y_shifted, x_shifted) + 2 * np.pi) % (2 * np.pi)
+
+            angle_deg = np.degrees(th_shifted)
+            if 45 <= angle_deg <= 135:
+                ha, va = 'center', 'bottom'
+            elif 225 <= angle_deg <= 315:
+                ha, va = 'center', 'top'
+            elif angle_deg < 45 or angle_deg > 315:
+                ha, va = 'left', 'center'
+            else:
+                ha, va = 'right', 'center'
+
+            fontsize = 10 if r_shifted > polar_radius * 0.25 else 8
+            label = f"d={d:.1f}\nv={v_val:.1f}\na={a:.1f}"
+            ax.text(th_shifted, r_shifted, label, fontsize=fontsize, ha=ha, va=va)
 
         car_w = polar_radius * 0.1
         car_h = polar_radius * 0.2
         car_rect = Rectangle(
-            (-car_w / 2, -car_h / 2), 
+            (-car_w / 2, -car_h / 2),
             car_w, car_h,
             facecolor='red',
             edgecolor='black',
             linewidth=1,
-            transform=ax.transData._b, 
+            transform=ax.transData._b,
             zorder=5
         )
         ax.add_patch(car_rect)
@@ -171,6 +208,7 @@ class SensorSystem:
         ax.set_theta_zero_location("E")
         ax.set_theta_direction(-1)
         ax.set_title("Closest Points to the Main Car")
-        ax.legend()
+        ax.legend(loc='upper right')
+
         plt.show(block=False)
         return fig

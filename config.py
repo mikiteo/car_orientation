@@ -1,7 +1,7 @@
 CONFIG = {
     "width": 800,
     "height": 600,
-    "road_width": 400,
+    "road_width": 500,
     "num_lanes": 6,
     "car_width": 40,
     "car_height": 80,
@@ -12,5 +12,6 @@ CONFIG = {
     "frame_duration": 10,
     "sensor_angle": 120,
     "sensor_start_angles": [165, 255, 75, 345],
-    "angle_resolution": 5
+    "angle_resolution": 5,
+    "delta_t": 1
 }
